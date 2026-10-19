@@ -129,6 +129,8 @@ button{font:inherit;cursor:pointer;color:inherit}
 .last{font-size:15px;color:var(--muted)}
 .last b{color:var(--fg);font-weight:600}
 .target{display:flex;gap:10px;align-items:flex-start;font-size:15px;background:var(--accent-soft);border-radius:12px;padding:10px 12px}
+.target.push{background:var(--gold-bg)}
+.target.push .tgt{color:var(--gold)}
 .target .tgt{font-family:var(--display);font-weight:700;font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);padding-top:2px}
 .note{font-size:15px;font-style:italic;color:var(--muted);background:var(--sunk);border-radius:10px;padding:8px 12px}
 .sets{display:flex;flex-direction:column;gap:8px;font-variant-numeric:tabular-nums}
@@ -287,13 +289,29 @@ function suggest(sets,st,sore){
   if(sets.every(s=>s.r>=hi))return{sets:sets.map(s=>({w:s.w==null?null:rnd(s.w+step),r:Math.max(lo,hi-2)})),why:`Every set hit ${hi} reps. Add ${fmtN(step)} kg and drop to ${Math.max(lo,hi-2)} reps.`};
   return{sets:sets.map(s=>({w:s.w,r:Math.min(hi,s.r+1)})),why:`Same weight, one more rep per set (up to ${hi}).`};
 }
+/* RP-style volume check: last time's pump for this exercise plus today's soreness for the body part.
+   Not sore and the pump was not great: one more set. Low pump or no soreness: push closer to failure. */
+const MAX_SETS=8;
+function volumeAdvice(pump,sore){
+  const hard="take every set to 1 or 2 reps short of failure";
+  if(sore==="still")return{add:0,msg:""};
+  if(sore==="none"&&pump===3)return{add:0,msg:`Great pump but no soreness. Go harder today: ${hard}.`};
+  if(sore==="none")return{add:1,msg:`No soreness and ${pump===1?"a low pump":pump===2?"an OK pump":"no pump rating"} last time, so one extra set today. Go harder: ${hard}.`};
+  if(pump===1)return{add:0,msg:`Low pump last time. Go harder today: ${hard}.`};
+  return{add:0,msg:""};
+}
 function latestBW(){const b=(S.acct.bodyweight||[]);return b.length?b[b.length-1].kg:null}
 function buildEntry(k,st,sore){
   const e={k,name:st.name,part:st.part,type:st.type};
   if(st.type==="cardio"){e.cardio={min:null,km:null,eff:null};return e}
   const last=lastTime(k,S.cur&&S.cur.id);
   const sug=last?suggest(last.e.sets,st,sore&&sore[st.part]):null;
-  if(sug){e.tgt=sug.sets;e.why=sug.why;e.sets=sug.sets.map(s=>({w:s.w,r:s.r,done:false}))}
+  if(sug){
+    const adv=volumeAdvice(last.e.pump,sore&&sore[st.part]);
+    if(adv.add&&sug.sets.length<MAX_SETS)sug.sets.push(Object.assign({},sug.sets[sug.sets.length-1]));
+    if(adv.msg)e.push=adv.msg;
+    e.tgt=sug.sets;e.why=sug.why;e.sets=sug.sets.map(s=>({w:s.w,r:s.r,done:false}));
+  }
   else{const bw=BW.has(k)?latestBW():null;e.sets=[0,1,2].map(()=>({w:bw,r:null,done:false}))}
   e.pump=null;return e;
 }
@@ -445,7 +463,7 @@ function vHome(){
   h+=`<section class="stack"><h2>What are you training today?</h2>
   <div class="tiles">${PARTS.map(([k,l])=>{const lt=lastTrained(k),on=S.parts.includes(k);return `<button class="tile ${on?"on":""}" data-act="part" data-v="${k}" aria-pressed="${on}" aria-label="${l}"><span class="ck">✓</span><b>${l}</b><small>${lt?"Last: "+ago(lt):"Not trained yet"}</small></button>`}).join("")}</div>`;
   if(soreParts.length){
-    h+=`<div class="card" style="gap:12px"><div class="stack" style="gap:2px"><span class="lbl">Soreness since last time</span><span class="fine">Optional. "Still sore" holds today's targets at last time's numbers.</span></div>`;
+    h+=`<div class="card" style="gap:12px"><div class="stack" style="gap:2px"><span class="lbl">Soreness since last time</span><span class="fine">Optional, but it shapes today's plan. Still sore: match last time. Never got sore: an extra set unless last time's pump was great.</span></div>`;
     soreParts.forEach(p=>{h+=`<div class="stack" style="gap:6px"><b>${PN[p]}</b><div class="chips">${SORE.map(([v,l])=>`<button class="chip soft ${S.sore[p]===v?"on":""}" data-act="sore" data-p="${p}" data-v="${v}">${l}</button>`).join("")}</div></div>`});
     h+=`</div>`;
   }
@@ -480,6 +498,7 @@ function exCard(e,i){
     if(last)h+=`<p class="last">Last time, ${fmtShort(last.w.startedAt)}: <b>${last.e.sets.filter(s=>s.r>0).map(s=>`${fmtN(s.w)}×${s.r}`).join(", ")}</b></p>`;
     else h+=`<p class="last">First time. Pick a weight you can lift for about ${lo} to ${hi} reps.${BW.has(e.k)?" Bodyweight move: enter your total weight (bodyweight plus or minus any added weight or assistance).":""}</p>`;
     if(e.tgt)h+=`<div class="target"><span class="tgt">Target</span><span><b>${e.tgt.map(s=>`${fmtN(s.w)}×${s.r}`).join(", ")}</b>. ${esc(e.why||"")}</span></div>`;
+    if(e.push)h+=`<div class="target push"><span class="tgt">Push</span><span>${esc(e.push)}</span></div>`;
     const b=bestPrior(e.k,c.id);let prIdx=-1,prV=b.e1+0.01;
     if(b.e1>0)e.sets.forEach((s,j)=>{if(s.done&&e1(s.w,s.r)>prV){prV=e1(s.w,s.r);prIdx=j}});
     h+=`<div class="sets"><div class="colhead"><span>Set</span><span>kg</span><span></span><span>Reps</span><span></span><span></span></div>`;
