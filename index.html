@@ -300,6 +300,15 @@ function volumeAdvice(pump,sore){
   if(pump===1)return{add:0,msg:`Low pump last time. Go harder today: ${hard}.`};
   return{add:0,msg:""};
 }
+/* Pump is rated once per body part when the workout ends. The last workout that trained the part decides. */
+function lastPartPump(p,excludeId){
+  for(const w of doneWs()){
+    if(w.id===excludeId||!(w.ex||[]).some(e=>e.part===p))continue;
+    return w.pump&&w.pump[p]!=null?w.pump[p]:null;
+  }
+  return null;
+}
+function liftParts(c){return [...new Set(c.ex.filter(e=>e.type!=="cardio"&&e.sets&&e.sets.some(s=>(s.done||s.t)&&s.r>0)).map(e=>e.part))]}
 function latestBW(){const b=(S.acct.bodyweight||[]);return b.length?b[b.length-1].kg:null}
 function buildEntry(k,st,sore){
   const e={k,name:st.name,part:st.part,type:st.type};
@@ -307,7 +316,8 @@ function buildEntry(k,st,sore){
   const last=lastTime(k,S.cur&&S.cur.id);
   const sug=last?suggest(last.e.sets,st,sore&&sore[st.part]):null;
   if(sug){
-    const adv=volumeAdvice(last.e.pump,sore&&sore[st.part]);
+    const lp=lastPartPump(st.part,S.cur&&S.cur.id);
+    const adv=volumeAdvice(lp!=null?lp:last.e.pump,sore&&sore[st.part]);
     if(adv.add&&sug.sets.length<MAX_SETS)sug.sets.push(Object.assign({},sug.sets[sug.sets.length-1]));
     if(adv.msg)e.push=adv.msg;
     e.tgt=sug.sets;e.why=sug.why;e.sets=sug.sets.map(s=>({w:s.w,r:s.r,done:false}));
@@ -376,7 +386,7 @@ function start(){
     const src=S.workouts.find(w=>w.id===S.repeatFrom);
     (src?src.ex:[]).forEach(e=>{const st=S.acct.exercises[e.k]||{name:e.name,part:e.part,type:e.type,step:2.5,lo:8,hi:12};c.ex.push(buildEntry(e.k,st,c.sore))});
   }
-  S.parts=[];S.sore={};S.repeatFrom=null;S.flash=null;S.adding=c.ex.length===0;S.openSet={};
+  S.parts=[];S.sore={};S.repeatFrom=null;S.flash=null;S.adding=c.ex.length===0;S.openSet={};S.finishing=false;
   S.view="workout";saveCur();render();window.scrollTo(0,0);
 }
 function addExercise(name,part){
@@ -512,8 +522,7 @@ function exCard(e,i){
         <button class="tick" data-act="done" data-i="${i}" data-s="${j}" aria-pressed="${!!s.done}" aria-label="Mark set ${j+1} done">${ICON.check}</button>
         <button class="del" data-act="delset" data-i="${i}" data-s="${j}" aria-label="Delete set ${j+1}">✕</button></div>`;
     });
-    h+=`</div><div class="stepper"><button data-act="rmset" data-i="${i}" aria-label="One set fewer">−</button><output>${e.sets.length}</output><button data-act="addset" data-i="${i}" aria-label="One more set">+</button><span class="fine">sets</span></div>
-    <div class="chips">${PUMP.map(([v,l])=>`<button class="chip soft ${e.pump===v?"on":""}" data-act="pump" data-i="${i}" data-v="${v}">${l}</button>`).join("")}</div>`;
+    h+=`</div><div class="stepper"><button data-act="rmset" data-i="${i}" aria-label="One set fewer">−</button><output>${e.sets.length}</output><button data-act="addset" data-i="${i}" aria-label="One more set">+</button><span class="fine">sets</span></div>`;
   }
   h+=`<button class="link" style="align-self:flex-start" data-act="settings" data-i="${i}">${open?"Hide settings":"Settings and note"}</button>`;
   if(open){
@@ -554,8 +563,15 @@ function vWorkout(){
   ${tot?`<div class="stack" style="gap:6px"><div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${tot}" aria-valuenow="${dn}"><i style="width:${Math.round(dn/tot*100)}%"></i></div><span class="fine">${dn} of ${tot} sets done</span></div>`:""}</div>`;
   c.ex.forEach((e,i)=>{h+=exCard(e,i)});
   if(S.adding)h+=addPanel();
-  if(!edit)h+=`<p class="fine">Tap ✓ on each set you finish. Pre-filled sets you never touch are dropped when you end the workout.</p>`;
-  h+=`</main><div class="actionbar"><div class="in"><button class="btn" data-act="adding">+ Exercise</button><button class="btn primary" data-act="finish">${edit?"Save changes":"End workout"}</button></div></div>`;
+  if(!edit&&!S.finishing)h+=`<p class="fine">Tap ✓ on each set you finish. Pre-filled sets you never touch are dropped when you end the workout.</p>`;
+  if(S.finishing){
+    const pp=liftParts(c);c.pump=c.pump||{};
+    h+=`<section class="card" id="finishPanel"><div class="stack" style="gap:2px"><h3>How was the pump?</h3><span class="fine">One rating per body part, for the whole workout. Optional. It decides next time's sets.</span></div>
+    ${pp.map(p=>`<div class="stack" style="gap:6px"><b>${PN[p]}</b><div class="chips">${PUMP.map(([v,l])=>`<button class="chip soft ${c.pump[p]===v?"on":""}" data-act="fpump" data-p="${p}" data-v="${v}">${l}</button>`).join("")}</div></div>`).join("")}</section>`;
+  }
+  h+=`</main><div class="actionbar"><div class="in">${S.finishing
+    ?`<button class="btn" data-act="finishno">Back</button><button class="btn primary" data-act="finishyes">${edit?"Save changes":"Save workout"}</button>`
+    :`<button class="btn" data-act="adding">+ Exercise</button><button class="btn primary" data-act="finish">${edit?"Save changes":"End workout"}</button>`}</div></div>`;
   return h;
 }
 function wSummary(w){
@@ -669,12 +685,15 @@ document.addEventListener("click",async ev=>{
     case "start":start();break;
     case "norepeat":S.repeatFrom=null;render();break;
     case "repeat":{const w=S.workouts.find(x=>x.id===b.dataset.id);if(!w)break;S.parts=[...(w.parts||[])];S.sore={};S.repeatFrom=w.id;S.flash=null;S.view="home";render();window.scrollTo(0,0);break}
-    case "resume":case "edit":{const w=S.workouts.find(x=>x.id===b.dataset.id);if(!w)break;S.cur=clone(w);S.adding=false;S.openSet={};S.confirm=null;S.saveState="saved";S.view="workout";render();window.scrollTo(0,0);break}
+    case "resume":case "edit":{const w=S.workouts.find(x=>x.id===b.dataset.id);if(!w)break;S.cur=clone(w);S.adding=false;S.finishing=false;S.openSet={};S.confirm=null;S.saveState="saved";S.view="workout";render();window.scrollTo(0,0);break}
     case "del":S.confirm=b.dataset.id;render();break;
     case "delno":S.confirm=null;render();break;
     case "delyes":{const id=b.dataset.id;S.confirm=null;try{await wRef(id).delete()}catch(e){writeErr(e)}render();break}
     case "leave":leaveWorkout();break;
-    case "finish":finish();break;
+    case "finish":if(liftParts(c).length){S.finishing=true;S.adding=false;render();const el=document.getElementById("finishPanel");if(el)el.scrollIntoView({block:"start",behavior:"smooth"})}else finish();break;
+    case "finishno":S.finishing=false;render();break;
+    case "finishyes":S.finishing=false;finish();break;
+    case "fpump":{const p=b.dataset.p,v=+b.dataset.v;c.pump=c.pump||{};if(c.pump[p]===v)delete c.pump[p];else c.pump[p]=v;saveCur();render();break}
     case "adding":S.adding=true;S.addMsg="";render();{const el=document.getElementById("addPanel");if(el)el.scrollIntoView({block:"start",behavior:"smooth"})}break;
     case "canceladd":S.adding=false;render();break;
     case "addex":{const st=S.acct.exercises[b.dataset.k];if(st)addExercise(st.name,st.part);break}
