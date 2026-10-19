@@ -1,0 +1,13 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Open a log by typing its name. Nobody can list all names.
+    match /accounts/{account} {
+      allow get, create, update: if true;
+      allow list, delete: if false;
+      match /workouts/{workout} {
+        allow read, write: if true;
+      }
+    }
+  }
+}
