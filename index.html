@@ -629,6 +629,8 @@ function vProgress(){
   if(!S.progEx||!S.acct.exercises[S.progEx])S.progEx=exs.slice().sort((a,b)=>(b[1].used||0)-(a[1].used||0))[0][0];
   const st=S.acct.exercises[S.progEx];
   h+=`<div class="field"><label class="lbl" for="progSel">Exercise</label><select id="progSel">${exs.map(([k,x])=>`<option value="${k}" ${k===S.progEx?"selected":""}>${esc(x.name)}</option>`).join("")}</select></div>`;
+  h+=S.confirm==="exdel"?`<div class="card" style="gap:10px"><span>Remove <b>${esc(st.name)}</b> from your exercise list? Past workouts keep their sets.</span><div class="row"><button class="btn danger small" data-act="exdelyes">Remove</button><button class="btn small" data-act="delno">Keep</button></div></div>`
+    :`<button class="link" style="align-self:flex-start;color:var(--danger)" data-act="exdel" ${S.ro?"disabled":""}>Remove from my exercise list</button>`;
   const rows=[];
   doneWs().slice().reverse().forEach(w=>{
     const e=(w.ex||[]).find(x=>x.k===S.progEx);if(!e)return;
@@ -704,6 +706,12 @@ document.addEventListener("click",async ev=>{
     case "settings":S.openSet[i]=!S.openSet[i];render();break;
     case "rmex":S.confirm="ex"+i;render();break;
     case "rmexyes":c.ex.splice(i,1);S.confirm=null;S.openSet={};saveCur();render();break;
+    case "exdel":S.confirm="exdel";render();break;
+    case "exdelyes":{
+      const k=S.progEx;S.confirm=null;if(!k||S.ro)break;
+      delete S.acct.exercises[k];S.progEx=null;
+      acctChain=acctChain.then(()=>acctRef().update({["exercises."+k]:firebase.firestore.FieldValue.delete()})).catch(writeErr);
+      render();break}
     case "delbw":{S.acct.bodyweight=S.acct.bodyweight.filter(x=>x.d!==b.dataset.v);saveAcct({bodyweight:S.acct.bodyweight});render();break}
   }
 });
@@ -714,7 +722,7 @@ document.addEventListener("input",ev=>{
 });
 document.addEventListener("change",ev=>{
   const t=ev.target,f=t.dataset.f;
-  if(t.id==="progSel"){S.progEx=t.value;render();return}
+  if(t.id==="progSel"){S.progEx=t.value;S.confirm=null;render();return}
   if(["step","lo","hi","note"].includes(f)){
     const k=t.dataset.k,st=S.acct.exercises[k];if(!st)return;
     const v=f==="note"?t.value.trim():num(t.value);if(f!=="note"&&(v==null||v<=0))return;
