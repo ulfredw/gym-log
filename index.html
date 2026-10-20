@@ -34,6 +34,16 @@
   --accent:#6E98FF; --accent-ink:#08101F; --accent-soft:#19243F; --glow:rgba(110,152,255,.16);
   --done:#4FD08B; --done-bg:#11291B; --gold:#F5CB4A; --gold-bg:#2E2610; --danger:#FF7B6E; --danger-bg:#3A1714;
   --shadow:0 1px 0 rgba(255,255,255,.03) inset; color-scheme:dark}
+/* Pink theme for Kim's account only; the class is set in render() from S.key. */
+:root.pink{
+  --bg:#F8EEF2; --sunk:#F1E2E8; --line:#EBD6DE;
+  --accent:#C2255C; --accent-ink:#FFFFFF; --accent-soft:#FCE4EE; --glow:rgba(194,37,92,.10)}
+@media (prefers-color-scheme: dark){:root.pink:not([data-theme="light"]){
+  --bg:#120B0F; --surface:#1C1318; --sunk:#261A20; --line:#33232B;
+  --accent:#FF7EB0; --accent-ink:#2A0716; --accent-soft:#3A1626; --glow:rgba(255,126,176,.16)}}
+:root.pink[data-theme="dark"]{
+  --bg:#120B0F; --surface:#1C1318; --sunk:#261A20; --line:#33232B;
+  --accent:#FF7EB0; --accent-ink:#2A0716; --accent-soft:#3A1626; --glow:rgba(255,126,176,.16)}
 :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 html{background:var(--bg);min-height:100%}
 body{margin:0;min-height:100vh;color:var(--fg);background:radial-gradient(130% 55% at 50% -12%,var(--glow),transparent 62%) no-repeat,var(--bg);font-family:var(--body);font-size:16px;line-height:1.45;-webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent}
@@ -660,6 +670,7 @@ function vWeight(){
   return h+`</main>`;
 }
 function render(){
+  document.documentElement.classList.toggle("pink",S.key==="kim");
   const v=S.view;let h="";
   if(v==="login")h=vLogin();
   else if(v==="workout"&&S.cur)h=vWorkout();
